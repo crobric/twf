@@ -6,6 +6,7 @@ import datetime
 import matplotlib.pyplot as plt
 import matplotlib
 from sklearn.linear_model import LinearRegression
+import functions
 
 
 ######Pïoupiou API:http://developers.pioupiou.fr/api/archive/
@@ -80,8 +81,8 @@ wind_min = 14
 min_duration = 2  # Minimum number of consecutive hours with requested wind
 heading_limits = [180, 360]
 acceptable_hour = [6, 21]
+thermal = thermal_detection.copy().reset_index()
 
-thermal=thermal_detection.copy().reset_index()
 # pioupiou_day_mask=(pioupiou['date']==datetime.date(2019,7,23)) & (pioupiou['hour']>=12)
 pioupiou_wind_min_mask = (thermal['wind_speed_real'] >= wind_min) & (
             thermal['wind_direction_real'] >= heading_limits[0]) & (thermal['wind_direction_real'] <= heading_limits[1]) \
@@ -110,10 +111,76 @@ for day in thermal_wind_min['date'].unique():
         thermal_wind_days = thermal_wind_days[thermal_wind_days.date != day]
 
 # Final list of days with conditions to be used
-days_with_wind = thermal_wind_days['date'].unique()
+days_with_wind = thermal_wind_days.copy()
 
-print('We identify {} days with conditions that can be used for kitesurfing between {} and {}'.format(days_with_wind.size,
-                                                                                                    thermal_wind_days[
-                                                                                                        'date'].min(),
-                                                                                                    thermal_wind_days[
-                                                                                                        'date'].max()))
+print('We identify {} hours with conditions that can be used for kitesurfing between {} and {}'.format(
+    days_with_wind['wind_speed_real'].size, thermal_wind_days['date'].min(), thermal_wind_days['date'].max()))
+
+
+#Prepare the features for ML algorithm
+atlas['wind_condition']='na'
+atlas['wind_condition']=atlas['time_compare'].apply(lambda x : 1 if x in days_with_wind['time_compare'].values else 0)
+features=atlas.dropna()
+
+features= features.drop(columns=['Unnamed: 0', 'date','hour','datetime', 'time','time_compare','latitude',
+       'longitude','speed.wind.true.longitudinal', 'speed.wind.true.transverse','ratio.humidity.air',
+       'speed.wind.true.u', 'speed.wind.true.v']).reset_index()
+
+# Labels are the values we want to predict
+labels = np.array(features['wind_condition'])
+
+# Remove the labels from the features
+
+features= features.drop(columns=['wind_condition','index'])
+# Saving feature names for later use
+feature_list = list(features.columns)
+# Convert to numpy array
+features = np.array(features)
+feature_list
+
+
+###Train ML algorithm###
+
+# Using Skicit-learn to split data into training and testing sets
+from sklearn.model_selection import train_test_split
+# Split the data into training and testing sets
+train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size = 0.25, random_state = 42)
+
+print('Training Features Shape:', train_features.shape)
+print('Training Labels Shape:', train_labels.shape)
+print('Testing Features Shape:', test_features.shape)
+print('Testing Labels Shape:', test_labels.shape)
+
+# Random Forest regressor
+from sklearn.ensemble import RandomForestRegressor
+# Instantiate model with 1000 decision trees
+#rf = RandomForestRegressor(n_estimators = 1000, random_state = 42)
+
+
+
+#Support vector Machine
+from sklearn import svm
+#rf = svm.SVC()
+
+
+#Decision Tree classifier
+from sklearn.tree import DecisionTreeClassifier
+rf = DecisionTreeClassifier()
+
+# TRAIN the model on training data
+rf.fit(train_features, train_labels);
+
+####TEST the model######
+# Train the model on training data
+rf.fit(train_features, train_labels);
+
+# Use the  predict method on the test data
+predictions = rf.predict(test_features)
+# calculate accuracy
+from sklearn import metrics
+acc=metrics.accuracy_score(test_labels, predictions)
+print('Accuracy:', round(acc*100, 2), '%.')
+
+
+###Get predictions for next 5 days###
+functions.forecast_conditions_5_days(rf)
